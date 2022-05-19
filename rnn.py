@@ -40,11 +40,9 @@ def main():
     except:
         print("Invalid ticker: " + t)
         print("Exiting...")
-        exit()
+        exit(-1)
     
     df = pdr.get_data_yahoo(t, start="2010-07-01", end="2021-01-30")
-
-    # df = pd.read_csv('TSLA.csv')
 
     df = df['Open'].values
     df = df.reshape(-1, 1)
@@ -82,9 +80,9 @@ def main():
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     model.fit(x_train, y_train, epochs=50, batch_size=32)
-    model.save('stock_prediction2.h5')
+    model.save('stock_prediction4.h5')
 
-    model = load_model('stock_prediction2.h5')
+    model = load_model('stock_prediction4.h5')
 
     predictions = model.predict(x_test)
     predictions = scaler.inverse_transform(predictions)
@@ -95,7 +93,7 @@ def main():
     ax.plot(y_test_scaled, color='red', label='Original price')
     plt.plot(predictions, color='cyan', label='Predicted price')
     plt.legend()
-    plt.savefig('graph2.png')
+    plt.savefig('graph4.png')
 
 if __name__ == "__main__":
     main()
