@@ -93,7 +93,7 @@ def main():
     ax.plot(y_test_scaled, color='red', label='Original price')
     plt.plot(predictions, color='cyan', label='Predicted price')
     plt.legend()
-    plt.savefig('graph4.png')
+    plt.savefig('graph.png')
 
 if __name__ == "__main__":
     main()
