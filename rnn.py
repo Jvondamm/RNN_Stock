@@ -7,8 +7,14 @@ from keras.layers import LSTM, Dense, Dropout
 import yfinance as yf
 from pandas_datareader import data as pdr
 import sys
+from datetime import date
 
 yf.pdr_override()
+
+# TODO
+# format prediction time
+# format plots
+# make algorithm better
 
 def create_dataset(df):
     x = []
@@ -23,14 +29,15 @@ def create_dataset(df):
 
 def main():
 
-    if len(sys.argv) == 1:
-        print("Must provide a ticker")
+    if len(sys.argv) == 1 or len(sys.argv) == 2:
+        print("Must provide a ticker and length in days to predict")
         exit()
-    elif len(sys.argv) > 2:
+    elif len(sys.argv) > 3:
         print("Too many arguments.")
         exit()
     else:
         t = sys.argv[1]
+        length_to_predict = sys.argv[2]
 
     ticker = yf.Ticker(t)
     info = None
@@ -41,8 +48,10 @@ def main():
         print("Invalid ticker: " + t)
         print("Exiting...")
         exit(-1)
-    
-    df = pdr.get_data_yahoo(t, start="2010-07-01", end="2021-01-30")
+
+    today = date.today()
+    # TODO pick better start time
+    df = pdr.get_data_yahoo(t, start="2010-07-01", end=today.strftime('%Y-%d-%d'))
 
     df = df['Open'].values
     df = df.reshape(-1, 1)
@@ -80,10 +89,6 @@ def main():
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     model.fit(x_train, y_train, epochs=50, batch_size=32)
-    model.save('stock_prediction4.h5')
-
-    model = load_model('stock_prediction4.h5')
-
     predictions = model.predict(x_test)
     predictions = scaler.inverse_transform(predictions)
     y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
