@@ -1,13 +1,14 @@
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential, load_model
+from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
 import yfinance as yf
 from pandas_datareader import data as pdr
 import sys
-from datetime import date
+import datetime
+from matplotlib.ticker import Formatter
+from matplotlib import dates
 
 yf.pdr_override()
 
@@ -26,19 +27,17 @@ def create_dataset(df):
     y = np.array(y)
     return x,y
 
-
 def main():
 
     if len(sys.argv) == 1 or len(sys.argv) == 2:
-        print("Must provide a ticker and length in days to predict")
-        exit()
+        print("Must provide a ticker and number of months to predict")
+        exit(-1)
     elif len(sys.argv) > 3:
         print("Too many arguments.")
-        exit()
-    else:
-        t = sys.argv[1]
-        length_to_predict = sys.argv[2]
+        exit(-1)
 
+    t = sys.argv[1]
+    length_to_predict = sys.argv[2] * 31
     ticker = yf.Ticker(t)
     info = None
 
@@ -49,25 +48,26 @@ def main():
         print("Exiting...")
         exit(-1)
 
-    today = date.today()
-    # TODO pick better start time
-    df = pdr.get_data_yahoo(t, start="2010-07-01", end=today.strftime('%Y-%d-%d'))
+    today = datetime.date.today()
+    prediction_date = today - datetime.timedelta(int(length_to_predict))
 
-    df = df['Open'].values
-    df = df.reshape(-1, 1)
 
-    dataset_train = np.array(df[:int(df.shape[0]*0.8)])
-    dataset_test = np.array(df[int(df.shape[0]*0.8):])
-    print(dataset_train.shape)
-    print(dataset_test.shape)
+    df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
+    df_train = pdr.get_data_yahoo(t, start="2010-07-01", end=prediction_date.strftime('%Y-%m-%d'))
+    df_test = df_test['Open'].values
+    df_train = df_train['Open'].values
+
+    df_test = df_test.reshape(-1, 1)
+    df_train = df_train.reshape(-1, 1)
+
+
+    dataset_train = np.array(df_train)
+    dataset_test = np.array(df_test)
 
     scaler = MinMaxScaler(feature_range=(0,1))
 
     dataset_train = scaler.fit_transform(dataset_train)
-    dataset_train[:5]
-
     dataset_test = scaler.transform(dataset_test)
-    dataset_test[:5]
 
     x_train, y_train = create_dataset(dataset_train)
     x_test, y_test = create_dataset(dataset_test)
@@ -93,12 +93,29 @@ def main():
     predictions = scaler.inverse_transform(predictions)
     y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-    fig, ax = plt.subplots(figsize=(16,8))
+    fig, ax = plt.subplots(figsize=(16, 8))
     ax.set_facecolor('#000041')
+    formatter = MyFormatter(predictions)
+    ax.xaxis.set_major_formatter(formatter)
     ax.plot(y_test_scaled, color='red', label='Original price')
     plt.plot(predictions, color='cyan', label='Predicted price')
     plt.legend()
     plt.savefig('graph.png')
+
+
+class MyFormatter(Formatter):
+    def __init__(self, dates, fmt='%Y-%m-%d'):
+        self.dates = dates
+        self.fmt = fmt
+
+    def __call__(self, x, pos=0):
+        """Return the label for time x at position pos."""
+        ind = int(round(x))
+        if ind >= len(self.dates) or ind < 0:
+            return ''
+        return dates.num2date(self.dates[ind]).strftime(self.fmt)
+
+
 
 if __name__ == "__main__":
     main()
