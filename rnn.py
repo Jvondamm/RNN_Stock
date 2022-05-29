@@ -54,7 +54,6 @@ def main():
     today = datetime.date.today()
     prediction_date = today - datetime.timedelta(int(length_to_predict))
 
-
     df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
     df_train = pdr.get_data_yahoo(t, start="2010-07-01", end=prediction_date.strftime('%Y-%m-%d'))
     df_test = df_test['Open'].values
@@ -62,7 +61,6 @@ def main():
 
     df_test = df_test.reshape(-1, 1)
     df_train = df_train.reshape(-1, 1)
-
 
     dataset_train = np.array(df_train)
     dataset_test = np.array(df_test)
