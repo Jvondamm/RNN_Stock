@@ -29,12 +29,15 @@ def create_dataset(df):
 
 def main():
 
-    if len(sys.argv) == 1 or len(sys.argv) == 2:
-        print("Must provide a ticker and number of months to predict")
+    if len(sys.argv) != 4 and len(sys.argv != 2):
+        print("Usage: python3 rnn.py <ticker> <integer of months to predict> <optional epochs> <optional batch size>")
         exit(-1)
-    elif len(sys.argv) > 3:
-        print("Too many arguments.")
-        exit(-1)
+    elif len(sys.argv == 4):
+        epochs = sys.argv[2]
+        batch_size = sys.argv[3]
+    else:
+        epochs = 50
+        batch_size = 32
 
     t = sys.argv[1]
     length_to_predict = sys.argv[2] * 31
@@ -88,7 +91,7 @@ def main():
 
     model.compile(loss='mean_squared_error', optimizer='adam')
 
-    model.fit(x_train, y_train, epochs=50, batch_size=32)
+    model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
     predictions = model.predict(x_test)
     predictions = scaler.inverse_transform(predictions)
     y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
