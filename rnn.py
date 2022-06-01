@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cycler
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
@@ -7,15 +8,11 @@ import yfinance as yf
 from pandas_datareader import data as pdr
 import sys
 import datetime
-from matplotlib.ticker import Formatter
-from matplotlib import dates
+from dateutil.relativedelta import relativedelta
+import pandas as pd
 
 yf.pdr_override()
-
-# TODO
-# format prediction time
-# format plots
-# make algorithm better
+IPython_default = plt.rcParams.copy()
 
 def create_dataset(df):
     x = []
@@ -29,18 +26,18 @@ def create_dataset(df):
 
 def main():
 
-    if len(sys.argv) != 4 and len(sys.argv != 2):
+    if len(sys.argv) != 5 and len(sys.argv) != 3:
         print("Usage: python3 rnn.py <ticker> <integer of months to predict> <optional epochs> <optional batch size>")
         exit(-1)
-    elif len(sys.argv == 4):
-        epochs = sys.argv[2]
-        batch_size = sys.argv[3]
+    elif len(sys.argv) == 5:
+        epochs = int(sys.argv[3])
+        batch_size = int(sys.argv[4])
     else:
         epochs = 50
         batch_size = 32
 
     t = sys.argv[1]
-    length_to_predict = sys.argv[2] * 31
+    months_to_predict = int(sys.argv[2]) + 3
     ticker = yf.Ticker(t)
     info = None
 
@@ -51,13 +48,22 @@ def main():
         print("Exiting...")
         exit(-1)
 
-    today = datetime.date.today()
-    prediction_date = today - datetime.timedelta(int(length_to_predict))
+    predict(months_to_predict, t, epochs, batch_size)
+    return 0
 
-    df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
-    df_train = pdr.get_data_yahoo(t, start="2010-07-01", end=prediction_date.strftime('%Y-%m-%d'))
-    df_test = df_test['Open'].values
-    df_train = df_train['Open'].values
+def predict(months_to_predict, t, epochs, batch_size):
+    today = datetime.date.today()
+    prediction_date = today - relativedelta(months=months_to_predict)
+
+    y_df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
+    days_to_predict = len(y_df_test)
+    y_df_train = pdr.get_data_yahoo(t, start="2020-01-01", end=prediction_date.strftime('%Y-%m-%d'))
+
+    df_test = y_df_test['Open'].values
+    df_train = y_df_train['Open'].values
+
+    totalData = pd.concat([y_df_train, y_df_test], axis=0)
+    totalData.drop(["Close", "High", "Low", "Volume"], inplace=True, axis=1)
 
     df_test = df_test.reshape(-1, 1)
     df_train = df_train.reshape(-1, 1)
@@ -90,33 +96,41 @@ def main():
     model.compile(loss='mean_squared_error', optimizer='adam')
 
     model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
-    predictions = model.predict(x_test)
-    predictions = scaler.inverse_transform(predictions)
-    y_test_scaled = scaler.inverse_transform(y_test.reshape(-1, 1))
+    predictions_n = []
+    test = np.array(x_test[49]).reshape((1, 50, 1))
+    for i in range(days_to_predict - 50):
+        predictions_n.append(model.predict(test)[0])
+        test = test[0][1:]
+        test = np.insert(test, -1, predictions_n[i])
+        test = test.reshape((1, 50, 1))
 
-    fig, ax = plt.subplots(figsize=(16, 8))
-    ax.set_facecolor('#000041')
-    formatter = MyFormatter(predictions)
-    ax.xaxis.set_major_formatter(formatter)
-    ax.plot(y_test_scaled, color='red', label='Original price')
-    plt.plot(predictions, color='cyan', label='Predicted price')
+    predictions_n = scaler.inverse_transform(predictions_n)
+    predictions_one = model.predict(x_test)
+    predictions_one = scaler.inverse_transform(predictions_one)
+
+    totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
+    predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'), freq='B')
+    totalData.reindex(totalDates)
+
+    colors = cycler('color',
+                    ['#EE6666', '#3388BB', '#9988DD',
+                     '#EECC55', '#88BB44', '#FFBBBB'])
+    plt.rc('axes', facecolor='#E6E6E6', edgecolor='none',
+           axisbelow=True, grid=True, prop_cycle=colors)
+    plt.rc('grid', color='w', linestyle='solid')
+    plt.rc('xtick', direction='out', color='gray')
+    plt.rc('ytick', direction='out', color='gray')
+    plt.rc('patch', edgecolor='#E6E6E6')
+    plt.rc('lines', linewidth=2)
+    fig, ax = plt.subplots(figsize=(20, 10))
+    plt.plot(totalDates[-int(days_to_predict * 1.3):], (totalData['Open'])[-int(days_to_predict * 1.3):], label='Actual Price')
+    plt.plot(predictionDates[-len(predictions_n):], predictions_n, label='Predicted Price (n-Step)')
+    plt.plot(predictionDates[-len(predictions_one):], predictions_one, label='Predicted Price (1-Step)')
     plt.legend()
+    ax.set_ylabel("Stock Price ($ USD)", fontsize=18, color='gray')
+    ax.set_xlabel("Date", fontsize=18, color='gray')
+    plt.title(t + " Stock Price Prediction", fontsize=25, color='gray')
     plt.savefig('graph.png')
-
-
-class MyFormatter(Formatter):
-    def __init__(self, dates, fmt='%Y-%m-%d'):
-        self.dates = dates
-        self.fmt = fmt
-
-    def __call__(self, x, pos=0):
-        """Return the label for time x at position pos."""
-        ind = int(round(x))
-        if ind >= len(self.dates) or ind < 0:
-            return ''
-        return dates.num2date(self.dates[ind]).strftime(self.fmt)
-
-
 
 if __name__ == "__main__":
     main()
