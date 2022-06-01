@@ -1,3 +1,4 @@
+import keras.metrics
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cycler
@@ -10,9 +11,12 @@ import sys
 import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
+import os
 
 yf.pdr_override()
 IPython_default = plt.rcParams.copy()
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 
 def create_dataset(df):
     x = []
@@ -22,7 +26,7 @@ def create_dataset(df):
         y.append(df[i, 0])
     x = np.array(x)
     y = np.array(y)
-    return x,y
+    return x, y
 
 def main():
 
@@ -48,10 +52,11 @@ def main():
         print("Exiting...")
         exit(-1)
 
-    predict(months_to_predict, t, epochs, batch_size)
+    PredictPrice(months_to_predict, t, epochs, batch_size)
+    # PredictReturn(months_to_predict, t, epochs, batch_size)
     return 0
 
-def predict(months_to_predict, t, epochs, batch_size):
+def PredictPrice(months_to_predict, t, epochs, batch_size):
     today = datetime.date.today()
     prediction_date = today - relativedelta(months=months_to_predict)
 
@@ -71,8 +76,7 @@ def predict(months_to_predict, t, epochs, batch_size):
     dataset_train = np.array(df_train)
     dataset_test = np.array(df_test)
 
-    scaler = MinMaxScaler(feature_range=(0,1))
-
+    scaler = MinMaxScaler(feature_range=(0, 1))
     dataset_train = scaler.fit_transform(dataset_train)
     dataset_test = scaler.transform(dataset_test)
 
@@ -93,7 +97,7 @@ def predict(months_to_predict, t, epochs, batch_size):
     x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
     x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
 
     model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
     predictions_n = []
@@ -106,6 +110,7 @@ def predict(months_to_predict, t, epochs, batch_size):
 
     predictions_n = scaler.inverse_transform(predictions_n)
     predictions_one = model.predict(x_test)
+    metrics = model.evaluate(x_test, y_test)
     predictions_one = scaler.inverse_transform(predictions_one)
 
     totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
@@ -127,10 +132,12 @@ def predict(months_to_predict, t, epochs, batch_size):
     plt.plot(predictionDates[-len(predictions_n):], predictions_n, label='Predicted Price (n-Step)')
     plt.plot(predictionDates[-len(predictions_one):], predictions_one, label='Predicted Price (1-Step)')
     plt.legend()
+    # ax.text(.05, 0.95, f"Mean Absolute % Error: {metrics[1]: .2f}%", verticalalignment='bottom')
     ax.set_ylabel("Stock Price ($ USD)", fontsize=18, color='gray')
     ax.set_xlabel("Date", fontsize=18, color='gray')
     plt.title(t + " Stock Price Prediction", fontsize=25, color='gray')
     plt.savefig('graph.png')
+    print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
 
 if __name__ == "__main__":
     main()
