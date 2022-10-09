@@ -52,16 +52,15 @@ def main():
         print("Exiting...")
         exit(-1)
 
-    PredictPrice(months_to_predict, t, epochs, batch_size)
-    # PredictReturn(months_to_predict, t, epochs, batch_size)
+    PredictPrice(t, epochs, batch_size)
     return 0
 
-def PredictPrice(months_to_predict, t, epochs, batch_size):
+def PredictPrice(t, epochs, batch_size, saved=None):
     today = datetime.date.today()
-    prediction_date = today - relativedelta(months=months_to_predict)
+    prediction_date = today - relativedelta(months=4)
 
     y_df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
-    days_to_predict = len(y_df_test)
+    days_to_predict = 10
     y_df_train = pdr.get_data_yahoo(t, start="2020-01-01", end=prediction_date.strftime('%Y-%m-%d'))
 
     df_test = y_df_test['Open'].values
@@ -83,16 +82,17 @@ def PredictPrice(months_to_predict, t, epochs, batch_size):
     x_train, y_train = create_dataset(dataset_train)
     x_test, y_test = create_dataset(dataset_test)
 
-    model = Sequential()
-    model.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-    model.add(Dropout(0.2))
-    model.add(LSTM(units=96, return_sequences=True))
-    model.add(Dropout(0.2))
-    model.add(LSTM(units=96, return_sequences=True))
-    model.add(Dropout(0.2))
-    model.add(LSTM(units=96))
-    model.add(Dropout(0.2))
-    model.add(Dense(units=1))
+    if saved == None:
+        model = Sequential()
+        model.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+        model.add(Dropout(0.2))
+        model.add(LSTM(units=96, return_sequences=True))
+        model.add(Dropout(0.2))
+        model.add(LSTM(units=96, return_sequences=True))
+        model.add(Dropout(0.2))
+        model.add(LSTM(units=96))
+        model.add(Dropout(0.2))
+        model.add(Dense(units=1))
 
     x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
     x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
@@ -100,9 +100,12 @@ def PredictPrice(months_to_predict, t, epochs, batch_size):
     model.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
 
     model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
+
+    model.save('model')
     predictions_n = []
-    test = np.array(x_test[49]).reshape((1, 50, 1))
-    for i in range(days_to_predict - 50):
+    #test = np.array(x_test[49]).reshape((1, 50, 1))
+    test = x_test
+    for i in range(days_to_predict):
         predictions_n.append(model.predict(test)[0])
         test = test[0][1:]
         test = np.insert(test, -1, predictions_n[i])
@@ -120,9 +123,9 @@ def PredictPrice(months_to_predict, t, epochs, batch_size):
     colors = cycler('color',
                     ['#EE6666', '#3388BB', '#9988DD',
                      '#EECC55', '#88BB44', '#FFBBBB'])
+    plt.rc('grid', color='w', linestyle='solid')
     plt.rc('axes', facecolor='#E6E6E6', edgecolor='none',
            axisbelow=True, grid=True, prop_cycle=colors)
-    plt.rc('grid', color='w', linestyle='solid')
     plt.rc('xtick', direction='out', color='gray')
     plt.rc('ytick', direction='out', color='gray')
     plt.rc('patch', edgecolor='#E6E6E6')
