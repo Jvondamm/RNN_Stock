@@ -16,6 +16,30 @@ import os
 yf.pdr_override()
 IPython_default = plt.rcParams.copy()
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+DAYS = 20
+EPOCHS = 50
+BATCH_SIZE = 32
+
+
+def create_datasets(df):
+    xUP = []
+    yUP = []
+    xDOWN = []
+    yDOWN = []
+    for i in range(50, df.shape[0]):
+        avg = sum(df[i-50:i, 0]) / 50
+        if df[i,0] <= avg:
+            xUP.append(df[i-50:i, 0])
+            yUP.append(df[i, 0])
+        else:
+            xDOWN.append(df[i-50:i, 0])
+            yDOWN.append(df[i, 0])
+
+    xUP = np.array(xUP)
+    yUP = np.array(yUP)
+    xDOWN = np.array(xDOWN)
+    yDOWN = np.array(yDOWN)
+    return xUP, yUP, xDOWN, yDOWN
 
 
 def create_dataset(df):
@@ -29,19 +53,17 @@ def create_dataset(df):
     return x, y
 
 def main():
-
-    if len(sys.argv) != 5 and len(sys.argv) != 3:
-        print("Usage: python3 rnn.py <ticker> <integer of months to predict> <optional epochs> <optional batch size>")
+    print(len(sys.argv))
+    if len(sys.argv) != 2 and len(sys.argv) != 3:
+        print("Usage: python3 rnn.py <ticker> <optional model file>")
         exit(-1)
-    elif len(sys.argv) == 5:
-        epochs = int(sys.argv[3])
-        batch_size = int(sys.argv[4])
-    else:
-        epochs = 50
-        batch_size = 32
+    elif len(sys.argv) == 3:
+        saved = sys.argv[2]
+
+    epochs = EPOCHS
+    batch_size = BATCH_SIZE
 
     t = sys.argv[1]
-    months_to_predict = int(sys.argv[2]) + 3
     ticker = yf.Ticker(t)
     info = None
 
@@ -52,7 +74,11 @@ def main():
         print("Exiting...")
         exit(-1)
 
-    PredictPrice(t, epochs, batch_size)
+    if len(sys.argv) == 3:
+        PredictPrice(t, epochs, batch_size, saved)
+    else:
+        PredictPrice(t, epochs, batch_size)
+
     return 0
 
 def PredictPrice(t, epochs, batch_size, saved=None):
@@ -60,7 +86,7 @@ def PredictPrice(t, epochs, batch_size, saved=None):
     prediction_date = today - relativedelta(months=4)
 
     y_df_test = pdr.get_data_yahoo(t, start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
-    days_to_predict = 10
+    days_to_predict = DAYS
     y_df_train = pdr.get_data_yahoo(t, start="2020-01-01", end=prediction_date.strftime('%Y-%m-%d'))
 
     df_test = y_df_test['Open'].values
@@ -79,43 +105,79 @@ def PredictPrice(t, epochs, batch_size, saved=None):
     dataset_train = scaler.fit_transform(dataset_train)
     dataset_test = scaler.transform(dataset_test)
 
-    x_train, y_train = create_dataset(dataset_train)
+    x_trainUP, y_trainUP, x_trainDOWN, y_trainDOWN = create_datasets(dataset_train)
     x_test, y_test = create_dataset(dataset_test)
 
     if saved == None:
-        model = Sequential()
-        model.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96, return_sequences=True))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96, return_sequences=True))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96))
-        model.add(Dropout(0.2))
-        model.add(Dense(units=1))
+        modelUP = Sequential()
+        modelUP.add(LSTM(units=96, return_sequences=True, input_shape=(x_trainUP.shape[1], 1)))
+        modelUP.add(Dropout(0.2))
+        modelUP.add(LSTM(units=96, return_sequences=True))
+        modelUP.add(Dropout(0.2))
+        modelUP.add(LSTM(units=96, return_sequences=True))
+        modelUP.add(Dropout(0.2))
+        modelUP.add(LSTM(units=96))
+        modelUP.add(Dropout(0.2))
+        modelUP.add(Dense(units=1))
 
-    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+        modelDOWN = Sequential()
+        modelDOWN.add(LSTM(units=96, return_sequences=True, input_shape=(x_trainDOWN.shape[1], 1)))
+        modelDOWN.add(Dropout(0.2))
+        modelDOWN.add(LSTM(units=96, return_sequences=True))
+        modelDOWN.add(Dropout(0.2))
+        modelDOWN.add(LSTM(units=96, return_sequences=True))
+        modelDOWN.add(Dropout(0.2))
+        modelDOWN.add(LSTM(units=96))
+        modelDOWN.add(Dropout(0.2))
+        modelDOWN.add(Dense(units=1))
+
+    x_trainUP = np.reshape(x_trainUP, (x_trainUP.shape[0], x_trainUP.shape[1], 1))
+    x_trainDOWN = np.reshape(x_trainDOWN, (x_trainDOWN.shape[0], x_trainDOWN.shape[1], 1))
     x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
-    model.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+    if saved == None:
+        modelUP.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+        modelUP.fit(x_trainUP, y_trainUP, epochs=epochs, batch_size=batch_size)
+        modelUP.save('modelUP')
 
-    model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
+        modelDOWN.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+        modelDOWN.fit(x_trainDOWN, y_trainDOWN, epochs=epochs, batch_size=batch_size)
+        modelDOWN.save('modelDOWN')
 
-    model.save('model')
-    predictions_n = []
-    #test = np.array(x_test[49]).reshape((1, 50, 1))
-    test = x_test
+    if saved != None:
+        modelUP = keras.models.load_model('modelUP')
+        modelDOWN = keras.models.load_model('modelDOWN')
+
+    predictions_nUP = []
+    predictions_nDOWN = []
+    testUP = x_test[-days_to_predict:]
+    testDOWN = x_test[-days_to_predict:]
     for i in range(days_to_predict):
-        predictions_n.append(model.predict(test)[0])
-        test = test[0][1:]
-        test = np.insert(test, -1, predictions_n[i])
-        test = test.reshape((1, 50, 1))
+        predictions_nUP.append(modelUP.predict(testUP)[0])
+        testUP = testUP[0][1:]
+        testUP = np.insert(testUP, -1, predictions_nUP[i])
+        testUP = testUP.reshape((1, 50, 1))
 
-    predictions_n = scaler.inverse_transform(predictions_n)
-    predictions_one = model.predict(x_test)
-    metrics = model.evaluate(x_test, y_test)
-    predictions_one = scaler.inverse_transform(predictions_one)
+        predictions_nDOWN.append(modelDOWN.predict(testDOWN)[0])
+        testDOWN = testDOWN[0][1:]
+        testDOWN = np.insert(testDOWN, -1, predictions_nDOWN[i])
+        testDOWN = testDOWN.reshape((1, 50, 1))
 
+    predictions_nUP = scaler.inverse_transform(predictions_nUP)
+    predictions_oneUP = modelUP.predict(x_test[-days_to_predict:])
+    metricsUP = modelUP.evaluate(x_test, y_test)
+    predictions_oneUP = scaler.inverse_transform(predictions_oneUP)
+    Plot(t, totalData, metricsUP, prediction_date, days_to_predict, predictions_nUP, predictions_oneUP, "UP")
+
+    predictions_nDOWN = scaler.inverse_transform(predictions_nDOWN)
+    predictions_oneDOWN = modelDOWN.predict(x_test[-days_to_predict:])
+    metricsDOWN = modelDOWN.evaluate(x_test, y_test)
+    predictions_oneDOWN = scaler.inverse_transform(predictions_oneDOWN)
+    Plot(t, totalData, metricsDOWN, prediction_date, days_to_predict, predictions_nDOWN, predictions_oneDOWN, "DOWN")
+
+def Plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one, type="UP"):
+
+    today = datetime.date.today()
     totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
     predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'), freq='B')
     totalData.reindex(totalDates)
@@ -131,7 +193,7 @@ def PredictPrice(t, epochs, batch_size, saved=None):
     plt.rc('patch', edgecolor='#E6E6E6')
     plt.rc('lines', linewidth=2)
     fig, ax = plt.subplots(figsize=(20, 10))
-    plt.plot(totalDates[-int(days_to_predict * 1.3):], (totalData['Open'])[-int(days_to_predict * 1.3):], label='Actual Price')
+    plt.plot(totalDates[-int(days_to_predict * 2):], (totalData['Open'])[-int(days_to_predict * 2):], label='Actual Price')
     plt.plot(predictionDates[-len(predictions_n):], predictions_n, label='Predicted Price (n-Step)')
     plt.plot(predictionDates[-len(predictions_one):], predictions_one, label='Predicted Price (1-Step)')
     plt.legend()
@@ -139,8 +201,12 @@ def PredictPrice(t, epochs, batch_size, saved=None):
     ax.set_ylabel("Stock Price ($ USD)", fontsize=18, color='gray')
     ax.set_xlabel("Date", fontsize=18, color='gray')
     plt.title(t + " Stock Price Prediction", fontsize=25, color='gray')
-    plt.savefig('graph.png')
+    if type == "UP":
+        plt.savefig('graphUP.png')
+    else:
+        plt.savefig('graphDOWN.png')
     print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
+
 
 if __name__ == "__main__":
     main()
