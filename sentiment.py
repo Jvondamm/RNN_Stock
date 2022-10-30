@@ -11,6 +11,7 @@ import math
 import datetime as dt
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 
 # In[2]:
@@ -23,18 +24,30 @@ nltk.download('stopwords')
 # In[3]:
 
 
-reddit = praw.Reddit(client_id='*********',
-                    client_secret='******************',
-                    user_agent='*********') ## to use this, make a Reddit app. Client ID is in top left corner, client secret is given, and user agent is the username that the app is under
+reddit = praw.Reddit(client_id='0QJCf-sHV__XlNXBnviE6g',
+                    client_secret='7-0NJ5QigYaKQCvUsnCMRfwcOQnRww',
+                    user_agent='virxxd')
 
 
 # In[4]:
 
 
-sub_reddits = reddit.subreddit('wallstreetbets')
+subreddits = ["Investing",
+"Stocks",
+"Economics",
+"StockMarket",
+"Economy",
+"GlobalMarkets",
+"WallStreetBets",
+"Options",
+"Finance",
+"Bitcoin",
+"Dividends",
+"Cryptocurrency",
+"SecurityAnalysis",
+"AlgoTrading",
+"DayTrading"]
 stocks = ["AMZN"]
-# For example purposes. To use this as a live trading tool, you'd want to populate this with tickers that have been mentioned on the pertinent community (WSB in our case) in a specified period.
-
 
 # In[5]:
 
@@ -117,23 +130,26 @@ def get_date(date):
 submission_statistics = []
 d = {}
 for ticker in stocks:
-    for submission in reddit.subreddit('wallstreetbets').search(ticker, limit=130):
-        if submission.domain != "self.wallstreetbets":
-            continue
-        d = {}
-        d['ticker'] = ticker
-        d['num_comments'] = submission.num_comments
-        d['comment_sentiment_average'] = commentSentiment(ticker, submission.url)
-        if d['comment_sentiment_average'] == 0.000000:
-            continue
-        d['latest_comment_date'] = latestComment(ticker, submission.url)
-        d['score'] = submission.score
-        d['upvote_ratio'] = submission.upvote_ratio
-        d['date'] = submission.created_utc
-        d['domain'] = submission.domain
-        d['num_crossposts'] = submission.num_crossposts
-        d['author'] = submission.author
-        submission_statistics.append(d)
+    for subreddit in subreddits:
+        for submission in reddit.subreddit(subreddit).search(ticker, limit=130):
+            past = datetime.now() - timedelta(days=30)
+            date = datetime.fromtimestamp(submission.created_utc)
+            if past > date:
+                continue
+            d = {}
+            d['ticker'] = ticker
+            d['num_comments'] = submission.num_comments
+            d['comment_sentiment_average'] = commentSentiment(ticker, submission.url)
+            if d['comment_sentiment_average'] == 0.000000:
+                continue
+            d['latest_comment_date'] = latestComment(ticker, submission.url)
+            d['score'] = submission.score
+            d['upvote_ratio'] = submission.upvote_ratio
+            d['date'] = submission.created_utc
+            d['domain'] = submission.domain
+            d['num_crossposts'] = submission.num_crossposts
+            d['author'] = submission.author
+            submission_statistics.append(d)
 
 dfSentimentStocks = pd.DataFrame(submission_statistics)
 
@@ -159,5 +175,4 @@ dfSentimentStocks.author.value_counts()
 
 dfSentimentStocks.to_csv('Reddit_Sentiment_Equity.csv', index=False)
 
-
-# In[ ]:
+print(dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index))
