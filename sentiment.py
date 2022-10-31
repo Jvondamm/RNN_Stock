@@ -6,11 +6,8 @@
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer as SIA
 import praw
-import matplotlib.pyplot as plt
-import math
 import datetime as dt
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 
 
