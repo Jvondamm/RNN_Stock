@@ -16,34 +16,46 @@ import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer as SIA
 import praw
 import pandas as pd
+import plotly.express as px
 
 yf.pdr_override()
 IPython_default = plt.rcParams.copy()
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-DAYS = 20
-EPOCHS = 50
-BATCH_SIZE = 32
+
+DAYS = 20               # Days to predict
+EPOCHS = 50             # Model training runs
+BATCH_SIZE = 32         # Model size per epoch
+SAVE_REDDIT_CSV = False # Saves Reddit Post stats and sentiment into csv
+SUBREDDITS = ["Investing",
+    "Stocks",
+    "Economics",
+    "StockMarket",
+    "Economy",
+    "GlobalMarkets",
+    "WallStreetBets",
+    "Options",
+    "Finance",
+    "Bitcoin",
+    "Dividends",
+    "Cryptocurrency",
+    "SecurityAnalysis",
+    "AlgoTrading",
+    "DayTrading"]       # Subreddits to webscrape
 
 
+# The sentiment value is public's opinion of the stock between -1 to 1.
+# The df input data is normalized between 0 and 1.
+# I get the previous 50 days and get their avg, then put it into a df with the "key" being:
+# the 51st day - avg - sentiment. So this gets the difference between the 51st day price and the avg,
+# then the difference of THAT and the sentiment. Then I sort by that "key"
+#
+# Then I essentially split my df into 20 sections, and grab one section based on my sentiment value.
+# For example if sentiment is .5, I grab the 15th section. If -.5, I grab the 5th section.
+#
+# This is the data I train my model on, therefore matching the price trend to the current stock sentiment.
 def createSentimentDataset(df, sentiment):
     x = []
     y = []
-
-    # I need to explain this to myself or I will forget.
-    #
-    # The sentiment value is public's opinion of the stock between -1 to 1.
-    # The df input data is normalized between 0 and 1.
-    # I get the previous 50 days and get its avg.
-    #
-    # Then I see the difference between the 51st day and the avg
-    # Its' range is 1, while the sentiment range is 2, so I multiply the difference
-    # of (avg - 51st day) by 2.
-    #
-    # Now THIS number is the change in price scaled between -1 and 1 over the last 50 days.
-    # Now if this number is within .1 of the sentiment number, I add it to the dataset.
-    # Essentially what this does is it only grabs training data that matches the sentiment value,
-    # effectively giving a pattern to the previously patternless stock data, and this
-    # pattern is influenced by real-time public opinion.
 
     halfLength = len(df) / 2
     df_stats = [[0]*(df.shape[0]),[0]*(df.shape[0])]
@@ -71,6 +83,10 @@ def createSentimentDataset(df, sentiment):
     return x, y
 
 
+# Creates a dataset in the form of
+# y: [0:50]
+# x: [51]
+# then increases indices by 1.
 def createDataset(df):
     x = []
     y = []
@@ -82,6 +98,7 @@ def createDataset(df):
     return x, y
 
 
+# Returns average sentiment for each comment of a reddit post.
 def commentSentiment(reddit, urlT):
     subComments = []
     bodyComment = []
@@ -125,6 +142,7 @@ def commentSentiment(reddit, urlT):
     return(averageScore)
 
 
+# Returns latest comment date of a post
 def latestComment(reddit, urlT):
     subComments = []
     updateDates = []
@@ -144,10 +162,67 @@ def latestComment(reddit, urlT):
     return(updateDates[-1])
 
 
+# Generates sentiment value of stock ticker via web scraping Reddit
+# then applying vadars' lexicon database
+def getSentiment(ticker):
+    nltk.download('vader_lexicon')
+    nltk.download('stopwords')
+
+    reddit = praw.Reddit(client_id='0QJCf-sHV__XlNXBnviE6g',
+                        client_secret='7-0NJ5QigYaKQCvUsnCMRfwcOQnRww',
+                        user_agent='virxxd')
+
+    subreddits = SUBREDDITS
+    submission_statistics = []
+    d = {}
+
+    for subreddit in subreddits:
+        for submission in reddit.subreddit(subreddit).search(ticker, limit=130):
+            past = datetime.datetime.now() - datetime.timedelta(days=30)
+            date = datetime.datetime.fromtimestamp(submission.created_utc)
+            if past > date:
+                continue
+            d = {}
+            d['ticker'] = ticker
+            d['num_comments'] = submission.num_comments
+            d['comment_sentiment_average'] = commentSentiment(reddit, submission.url)
+            if d['comment_sentiment_average'] == 0.000000:
+                continue
+            d['latest_comment_date'] = latestComment(reddit, submission.url)
+            d['score'] = submission.score
+            d['upvote_ratio'] = submission.upvote_ratio
+            d['date'] = submission.created_utc
+            d['domain'] = submission.domain
+            d['num_crossposts'] = submission.num_crossposts
+            d['author'] = submission.author
+            submission_statistics.append(d)
+
+    dfSentimentStocks = pd.DataFrame(submission_statistics)
+
+    _timestampcreated = dfSentimentStocks["date"].apply(getDate)
+    dfSentimentStocks = dfSentimentStocks.assign(timestamp = _timestampcreated)
+
+    _timestampcomment = dfSentimentStocks["latest_comment_date"].apply(getDate)
+    dfSentimentStocks = dfSentimentStocks.assign(commentdate = _timestampcomment)
+
+    dfSentimentStocks.sort_values("latest_comment_date", axis = 0, ascending = True,inplace = True, na_position ='last')
+
+    dfSentimentStocks.author.value_counts()
+
+    if SAVE_REDDIT_CSV:
+        dfSentimentStocks.to_csv('Reddit_Sentiment_Equity.csv', index=False)
+
+    print("Overall Sentiment: ", dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index))
+    return dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index)
+
+
+# Returns reddit post date
 def getDate(date):
     return datetime.datetime.fromtimestamp(date)
 
 
+# Takes sentiment value, fetches stock price history, generates control and actual LSTM models,
+# trains and predicts future prices using models, then calls plot()
 def predictPrice(t, epochs, batch_size, sentiment, saved=None):
     today = datetime.date.today()
     prediction_date = today - relativedelta(months=4)
@@ -229,8 +304,9 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
     metrics = model.evaluate(x_test, y_test)
     predictions_one = scaler.inverse_transform(predictions_one)
     plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
+    plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
 
-
+# Plots ontrol and actual predictions according to real data
 def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
 
     today = datetime.date.today()
@@ -260,73 +336,20 @@ def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n,
     print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
 
 
-def getSentiment():
-    nltk.download('vader_lexicon')
-    nltk.download('stopwords')
-
-    reddit = praw.Reddit(client_id='0QJCf-sHV__XlNXBnviE6g',
-                        client_secret='7-0NJ5QigYaKQCvUsnCMRfwcOQnRww',
-                        user_agent='virxxd')
-
-    subreddits = ["Investing",
-    "Stocks",
-    "Economics",
-    "StockMarket",
-    "Economy",
-    "GlobalMarkets",
-    "WallStreetBets",
-    "Options",
-    "Finance",
-    "Bitcoin",
-    "Dividends",
-    "Cryptocurrency",
-    "SecurityAnalysis",
-    "AlgoTrading",
-    "DayTrading"]
-    stocks = ["AMZN"]
-
-    submission_statistics = []
-    d = {}
-    for ticker in stocks:
-        for subreddit in subreddits:
-            for submission in reddit.subreddit(subreddit).search(ticker, limit=130):
-                past = datetime.datetime.now() - datetime.timedelta(days=30)
-                date = datetime.datetime.fromtimestamp(submission.created_utc)
-                if past > date:
-                    continue
-                d = {}
-                d['ticker'] = ticker
-                d['num_comments'] = submission.num_comments
-                d['comment_sentiment_average'] = commentSentiment(reddit, submission.url)
-                if d['comment_sentiment_average'] == 0.000000:
-                    continue
-                d['latest_comment_date'] = latestComment(reddit, submission.url)
-                d['score'] = submission.score
-                d['upvote_ratio'] = submission.upvote_ratio
-                d['date'] = submission.created_utc
-                d['domain'] = submission.domain
-                d['num_crossposts'] = submission.num_crossposts
-                d['author'] = submission.author
-                submission_statistics.append(d)
-
-    dfSentimentStocks = pd.DataFrame(submission_statistics)
-
-    _timestampcreated = dfSentimentStocks["date"].apply(getDate)
-    dfSentimentStocks = dfSentimentStocks.assign(timestamp = _timestampcreated)
-
-    _timestampcomment = dfSentimentStocks["latest_comment_date"].apply(getDate)
-    dfSentimentStocks = dfSentimentStocks.assign(commentdate = _timestampcomment)
-
-    dfSentimentStocks.sort_values("latest_comment_date", axis = 0, ascending = True,inplace = True, na_position ='last')
-
-    dfSentimentStocks.author.value_counts()
-
-    dfSentimentStocks.to_csv('Reddit_Sentiment_Equity.csv', index=False)
-
-    print("Overall Sentiment: ", dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index))
-    return dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index)
+def plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
+    today = datetime.date.today()
+    totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
+    predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'), freq='B')
+    totalData.reindex(totalDates)
+    df = pd.DataFrame(
+        totalDates[-int(days_to_predict * 2):],
+        (totalData['Open'])[-int(days_to_predict * 2):]
+        )
+    fig = px.line(df, title='Actual Price')
+    fig.show()
 
 
+# Main
 def main():
     if len(sys.argv) != 2 and len(sys.argv) != 3:
         print("Usage: python3 rnn2.py <ticker> <optional model file>")
@@ -351,7 +374,7 @@ def main():
     if len(sys.argv) == 3:
         predictPrice(t, epochs, batch_size, 0, saved)
     else:
-        # sentiment = getSentiment()
+        # sentiment = getSentiment(ticker)
         sentiment = -1
         predictPrice(t, epochs, batch_size, sentiment)
     return 0

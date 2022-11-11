@@ -1,0 +1,6 @@
+TODO
+
+add argparse for both model files for premium execution times - and add sentiment arg
+put both above into a materials dir
+interactive graph
+better datasplit based on sentiment?
