@@ -1,31 +1,37 @@
+import os
+import argparse
+import datetime
+from dateutil.relativedelta import relativedelta
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import keras.metrics
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cycler
-from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
 import yfinance as yf
-from pandas_datareader import data as pdr
-import sys
-import datetime
-from dateutil.relativedelta import relativedelta
 import pandas as pd
-import os
+from pandas_datareader import data as pdr
+import pandas as pd
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer as SIA
 import praw
-import pandas as pd
-import plotly.express as px
+import config
+
+# suppress tf errors
+import tensorflow.python.util.deprecation as deprecation
+deprecation._PRINT_DEPRECATION_WARNINGS = False
 
 yf.pdr_override()
 IPython_default = plt.rcParams.copy()
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 DAYS = 20               # Days to predict
+POST_DAYS = 30          # Max Reddit posts scraped
 EPOCHS = 50             # Model training runs
 BATCH_SIZE = 32         # Model size per epoch
-SAVE_REDDIT_CSV = False # Saves Reddit Post stats and sentiment into csv
 SUBREDDITS = ["Investing",
     "Stocks",
     "Economics",
@@ -40,7 +46,13 @@ SUBREDDITS = ["Investing",
     "Cryptocurrency",
     "SecurityAnalysis",
     "AlgoTrading",
-    "DayTrading"]       # Subreddits to webscrape
+    "DayTrading",
+    "PersonalFinance",
+    "Investing",
+    "Dividends",
+    "StocksToBuyToday",
+    "Politics",
+    "WorldNews"]       # Subreddits to webscrape
 
 
 # The sentiment value is public's opinion of the stock between -1 to 1.
@@ -164,55 +176,65 @@ def latestComment(reddit, urlT):
 
 # Generates sentiment value of stock ticker via web scraping Reddit
 # then applying vadars' lexicon database
-def getSentiment(ticker):
-    nltk.download('vader_lexicon')
-    nltk.download('stopwords')
+def getSentiment(ticker, csv):
 
-    reddit = praw.Reddit(client_id='0QJCf-sHV__XlNXBnviE6g',
-                        client_secret='7-0NJ5QigYaKQCvUsnCMRfwcOQnRww',
-                        user_agent='virxxd')
+    if csv:
+        dfSentimentStocks = pd.read_csv('artifacts/sentiment.csv', index=False)
+    else:
 
-    subreddits = SUBREDDITS
-    submission_statistics = []
-    d = {}
+        nltk.download('vader_lexicon')
+        nltk.download('stopwords')
 
-    for subreddit in subreddits:
-        for submission in reddit.subreddit(subreddit).search(ticker, limit=130):
-            past = datetime.datetime.now() - datetime.timedelta(days=30)
-            date = datetime.datetime.fromtimestamp(submission.created_utc)
-            if past > date:
-                continue
-            d = {}
-            d['ticker'] = ticker
-            d['num_comments'] = submission.num_comments
-            d['comment_sentiment_average'] = commentSentiment(reddit, submission.url)
-            if d['comment_sentiment_average'] == 0.000000:
-                continue
-            d['latest_comment_date'] = latestComment(reddit, submission.url)
-            d['score'] = submission.score
-            d['upvote_ratio'] = submission.upvote_ratio
-            d['date'] = submission.created_utc
-            d['domain'] = submission.domain
-            d['num_crossposts'] = submission.num_crossposts
-            d['author'] = submission.author
-            submission_statistics.append(d)
+        reddit = praw.Reddit(client_id=config.client_id,
+                            client_secret=config.client_secret,
+                            user_agent=config.user_agent)
 
-    dfSentimentStocks = pd.DataFrame(submission_statistics)
+        subreddits = SUBREDDITS
+        submission_statistics = []
+        d = {}
 
-    _timestampcreated = dfSentimentStocks["date"].apply(getDate)
-    dfSentimentStocks = dfSentimentStocks.assign(timestamp = _timestampcreated)
+        for subreddit in subreddits:
+            print("Scraping subreddit: %s" % subreddit)
+            for submission in reddit.subreddit(subreddit).search(ticker, limit=130):
+                past = datetime.datetime.now() - datetime.timedelta(days=30)
+                date = datetime.datetime.fromtimestamp(submission.created_utc)
+                if past > date:
+                    continue
+                d = {}
+                d['ticker'] = ticker
+                d['num_comments'] = submission.num_comments
+                d['comment_sentiment_average'] = commentSentiment(reddit, submission.url)
+                if d['comment_sentiment_average'] == 0.000000:
+                    continue
+                d['latest_comment_date'] = latestComment(reddit, submission.url)
+                d['score'] = submission.score
+                d['upvote_ratio'] = submission.upvote_ratio
+                d['date'] = submission.created_utc
+                d['domain'] = submission.domain
+                d['num_crossposts'] = submission.num_crossposts
+                d['author'] = submission.author
+                submission_statistics.append(d)
 
-    _timestampcomment = dfSentimentStocks["latest_comment_date"].apply(getDate)
-    dfSentimentStocks = dfSentimentStocks.assign(commentdate = _timestampcomment)
+        dfSentimentStocks = pd.DataFrame(submission_statistics)
+        if dfSentimentStocks.empty:
+            print("Could not locate any posts regarding ticker %s, exiting..." % ticker)
+            exit(0)
 
-    dfSentimentStocks.sort_values("latest_comment_date", axis = 0, ascending = True,inplace = True, na_position ='last')
+        _timestampcreated = dfSentimentStocks["date"].apply(getDate)
+        dfSentimentStocks = dfSentimentStocks.assign(timestamp = _timestampcreated)
 
-    dfSentimentStocks.author.value_counts()
+        _timestampcomment = dfSentimentStocks["latest_comment_date"].apply(getDate)
+        dfSentimentStocks = dfSentimentStocks.assign(commentdate = _timestampcomment)
 
-    if SAVE_REDDIT_CSV:
-        dfSentimentStocks.to_csv('artifacts/Reddit_Sentiment_Equity.csv', index=False)
+        dfSentimentStocks.sort_values("latest_comment_date", axis = 0,
+        ascending = True,inplace = True, na_position ='last')
 
-    print("Overall Sentiment: ", dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index))
+        dfSentimentStocks.author.value_counts()
+        dfSentimentStocks.to_csv('artifacts/sentiment.csv', index=False)
+
+    print("Parsed %s hits" % str(len(dfSentimentStocks)))
+    print("Overall Sentiment: ", dfSentimentStocks['comment_sentiment_average'].sum()
+    / len(dfSentimentStocks.index))
     return dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index)
 
 
@@ -223,7 +245,16 @@ def getDate(date):
 
 # Takes sentiment value, fetches stock price history, generates control and actual LSTM models,
 # trains and predicts future prices using models, then calls plot()
-def predictPrice(t, epochs, batch_size, sentiment, saved=None):
+def predictPrice(t, epochs, batch_size, sentiment, model_n, model_one):
+
+    if model_n is not None:
+        print("Loading model_n")
+        model_n = keras.models.load_model(model_n)
+    if model_one is not None:
+        print("Loading model_one")
+        model_one = keras.models.load_model(model_one)
+
+    # grab beginning-ending dates
     today = datetime.date.today()
     prediction_date = today - relativedelta(months=4)
 
@@ -231,6 +262,7 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
     days_to_predict = DAYS
     y_df_train = pdr.get_data_yahoo(t, start="2000-01-01", end=prediction_date.strftime('%Y-%m-%d'))
 
+    # split training/testing data
     df_test = y_df_test['Open'].values
     df_train = y_df_train['Open'].values
 
@@ -248,8 +280,9 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
     dataset_test = scaler.transform(dataset_test)
 
     x_test, y_test = createDataset(dataset_test)
+    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
-    if saved == None:
+    if model_one == None:
         x_train, y_train = createDataset(dataset_train)
         model_one = Sequential()
         model_one.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
@@ -262,6 +295,12 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
         model_one.add(Dropout(0.2))
         model_one.add(Dense(units=1))
 
+        x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+        model_one.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+        model_one.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
+        model_one.save('artifacts/model_one')
+
+    if model_n == None:
         x_sent_train, y_sent_train = createSentimentDataset(dataset_train, sentiment)
         model_n = Sequential()
         model_n.add(LSTM(units=96, return_sequences=True, input_shape=(x_sent_train.shape[1], 1)))
@@ -274,22 +313,10 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
         model_n.add(Dropout(0.2))
         model_n.add(Dense(units=1))
 
-    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
-
-    if saved == None:
-        x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-        model_one.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
-        model_one.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
-        model_one.save('artifacts/model_one')
-
         x_sent_train = np.reshape(x_sent_train, (x_sent_train.shape[0], x_sent_train.shape[1], 1))
         model_n.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
         model_n.fit(x_sent_train, y_sent_train, epochs=epochs, batch_size=batch_size)
         model_n.save('artifacts/model_n')
-
-    if saved != None:
-        model_one = keras.models.load_model('artifacts/model_one')
-        model_n = keras.models.load_model('artifacts/model_n')
 
     predictions_n = []
     test = x_test
@@ -299,19 +326,22 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
         test = np.insert(test, -1, predictions_n[i])
         test = test.reshape((1, 50, 1))
 
+    print("Generating Predictions...")
     predictions_n = scaler.inverse_transform(predictions_n)
     predictions_one = model_one.predict(x_test[-days_to_predict:])
     metrics = model_n.evaluate(x_test, y_test)
     predictions_one = scaler.inverse_transform(predictions_one)
+
+    print("Plotting...")
     plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
-    plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
 
 # Plots control and actual predictions according to real data
 def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
 
     today = datetime.date.today()
     totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
-    predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'), freq='B')
+    predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'),
+    end=today.strftime('%Y-%m-%d'), freq='B')
     totalData.reindex(totalDates)
 
     colors = cycler('color',
@@ -332,51 +362,37 @@ def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n,
     ax.set_ylabel("Stock Price ($ USD)", fontsize=18, color='gray')
     ax.set_xlabel("Date", fontsize=18, color='gray')
     plt.title(t + " Stock Price Prediction", fontsize=25, color='gray')
-    plt.savefig('graph2.png')
+    plt.savefig('artifacts/graph.png')
     print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
-
-
-def plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
-    today = datetime.date.today()
-    totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
-    predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'), freq='B')
-    totalData.reindex(totalDates)
-    df = pd.DataFrame(
-        totalDates[-int(days_to_predict * 2):],
-        (totalData['Open'])[-int(days_to_predict * 2):]
-        )
-    fig = px.line(df, title='Actual Price')
-    fig.show()
 
 
 # Main
 def main():
-    if len(sys.argv) != 2 and len(sys.argv) != 3:
-        print("Usage: python3 rnn2.py <ticker> <optional model files>")
-        exit(-1)
-    elif len(sys.argv) == 3:
-        saved = sys.argv[2]
+    parser = argparse.ArgumentParser(description='Generate price prediction graph for selected company.')
+    parser.add_argument('ticker', help='company stock symbol')
+    parser.add_argument('--modelN', dest='model_n', nargs='?', help='path to trained model_n')
+    parser.add_argument('--model1', dest='model_one', nargs='?', help='path to trained model_one')
+    args = parser.parse_args()
 
     epochs = EPOCHS
     batch_size = BATCH_SIZE
 
-    t = sys.argv[1]
-    ticker = yf.Ticker(t)
+    ticker = yf.Ticker(args.ticker)
     info = None
 
     try:
         info = ticker.info
     except:
-        print("Invalid ticker: " + t)
-        print("Exiting...")
+        print("Invalid ticker: " + args.ticker)
         exit(-1)
 
-    if len(sys.argv) == 3:
-        predictPrice(t, epochs, batch_size, 0, saved)
-    else:
-        # sentiment = getSentiment(ticker)
-        sentiment = -1
-        predictPrice(t, epochs, batch_size, sentiment)
+    sentiment = getSentiment(args.ticker, args.sentiment)
+    predictPrice(args.ticker,
+                epochs,
+                batch_size,
+                sentiment,
+                args.model_n,
+                args.model_one)
     return 0
 
 

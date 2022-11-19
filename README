@@ -1,6 +1,60 @@
-TODO
+# Foobar
 
-add argparse for both model files for premium execution times - and add sentiment arg
-put both above into a materials dir
-interactive graph
-better datasplit based on sentiment?
+RNN is a python script that generates a 20-day prediction price graph for a user-specified stock utilizing a sentiment analysis of Reddit Posts and a LSTM model trained on stock price history.
+
+What every "Predicting Stock Prices Using Python" article (and I mean literally every) doesn't tell you is that they only predict one day in advance, but display a graph predicting weeks into the future.
+
+How?
+
+First note that every model including mine, to measure their performance, pretends "today" is around a month ago, so it can show whether its predicted prices are accurate or not.
+
+Then the models use the format of taking in the previous 50 days of prices and outputting today's price. Then to predict the tomorrow, it *should* take in the previous 49 days, append its own predicted for today, to make a length-50 array, then predict tomorrow's price. Instead every article disregards the price it predicted for today, and takes in the *real* price of today, and uses that to predict tomorrow. Keep on repeating this and you are really only predicting one day in advance.
+
+This is done by training the model to take in for example 50 days, then predict the 51st day. Then to predict that 52nd day, the model doesn't use the day it just, but the actual price of the 51st day.
+
+
+Model-One predicts prices one day in future and acts as a accuracy ideal.
+Model-N predicts prices N days, in this case 20 days in the future, and is the real price predictor model whose accuracy matters.
+
+
+
+## Installation
+
+```python
+pip3 install -r requirements.txt
+```
+
+
+## Usage
+
+First, import your Reddit API id, secret, and user agent into config.py.
+
+
+Output model, csv, and graph files are in artifacts. Sample files for AMZN included.
+
+```python
+
+# Help
+python3 src/rnn.py -h
+
+# Output
+usage: rnn.py [-h] [--modelN [MODEL_N]] [--model1 [MODEL_ONE]] ticker
+
+Generate price prediction graph for selected company.
+
+positional arguments:
+  ticker                company stock symbol
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --modelN [MODEL_N]    path to trained model_n
+  --model1 [MODEL_ONE]  path to trained model_one
+```
+
+## Contributing
+
+There are no plans for updating or maintaining this project, but feel free to create issues then contact me about them through my profile.
+
+## License
+
+[MIT](https://choosealicense.com/licenses/mit/)
