@@ -210,7 +210,7 @@ def getSentiment(ticker):
     dfSentimentStocks.author.value_counts()
 
     if SAVE_REDDIT_CSV:
-        dfSentimentStocks.to_csv('Reddit_Sentiment_Equity.csv', index=False)
+        dfSentimentStocks.to_csv('artifacts/Reddit_Sentiment_Equity.csv', index=False)
 
     print("Overall Sentiment: ", dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index))
     return dfSentimentStocks['comment_sentiment_average'].sum() / len(dfSentimentStocks.index)
@@ -251,62 +251,62 @@ def predictPrice(t, epochs, batch_size, sentiment, saved=None):
 
     if saved == None:
         x_train, y_train = createDataset(dataset_train)
-        model = Sequential()
-        model.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96, return_sequences=True))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96, return_sequences=True))
-        model.add(Dropout(0.2))
-        model.add(LSTM(units=96))
-        model.add(Dropout(0.2))
-        model.add(Dense(units=1))
+        model_one = Sequential()
+        model_one.add(LSTM(units=96, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+        model_one.add(Dropout(0.2))
+        model_one.add(LSTM(units=96, return_sequences=True))
+        model_one.add(Dropout(0.2))
+        model_one.add(LSTM(units=96, return_sequences=True))
+        model_one.add(Dropout(0.2))
+        model_one.add(LSTM(units=96))
+        model_one.add(Dropout(0.2))
+        model_one.add(Dense(units=1))
 
         x_sent_train, y_sent_train = createSentimentDataset(dataset_train, sentiment)
-        modelS = Sequential()
-        modelS.add(LSTM(units=96, return_sequences=True, input_shape=(x_sent_train.shape[1], 1)))
-        modelS.add(Dropout(0.2))
-        modelS.add(LSTM(units=96, return_sequences=True))
-        modelS.add(Dropout(0.2))
-        modelS.add(LSTM(units=96, return_sequences=True))
-        modelS.add(Dropout(0.2))
-        modelS.add(LSTM(units=96))
-        modelS.add(Dropout(0.2))
-        modelS.add(Dense(units=1))
+        model_n = Sequential()
+        model_n.add(LSTM(units=96, return_sequences=True, input_shape=(x_sent_train.shape[1], 1)))
+        model_n.add(Dropout(0.2))
+        model_n.add(LSTM(units=96, return_sequences=True))
+        model_n.add(Dropout(0.2))
+        model_n.add(LSTM(units=96, return_sequences=True))
+        model_n.add(Dropout(0.2))
+        model_n.add(LSTM(units=96))
+        model_n.add(Dropout(0.2))
+        model_n.add(Dense(units=1))
 
     x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
 
     if saved == None:
         x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-        model.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
-        model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
-        model.save('model2')
+        model_one.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+        model_one.fit(x_train, y_train, epochs=epochs, batch_size=batch_size)
+        model_one.save('artifacts/model_one')
 
         x_sent_train = np.reshape(x_sent_train, (x_sent_train.shape[0], x_sent_train.shape[1], 1))
-        modelS.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
-        modelS.fit(x_sent_train, y_sent_train, epochs=epochs, batch_size=batch_size)
-        modelS.save('model2S')
+        model_n.compile(loss='mean_squared_error', optimizer='adam', metrics=[keras.metrics.MeanAbsolutePercentageError()])
+        model_n.fit(x_sent_train, y_sent_train, epochs=epochs, batch_size=batch_size)
+        model_n.save('artifacts/model_n')
 
     if saved != None:
-        modelS = keras.models.load_model('model2')
-        modelS = keras.models.load_model('model2S')
+        model_one = keras.models.load_model('artifacts/model_one')
+        model_n = keras.models.load_model('artifacts/model_n')
 
     predictions_n = []
     test = x_test
     for i in range(days_to_predict):
-        predictions_n.append(modelS.predict(test)[0])
+        predictions_n.append(model_n.predict(test)[0])
         test = test[0][1:]
         test = np.insert(test, -1, predictions_n[i])
         test = test.reshape((1, 50, 1))
 
     predictions_n = scaler.inverse_transform(predictions_n)
-    predictions_one = model.predict(x_test[-days_to_predict:])
-    metrics = model.evaluate(x_test, y_test)
+    predictions_one = model_one.predict(x_test[-days_to_predict:])
+    metrics = model_n.evaluate(x_test, y_test)
     predictions_one = scaler.inverse_transform(predictions_one)
     plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
     plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
 
-# Plots ontrol and actual predictions according to real data
+# Plots control and actual predictions according to real data
 def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
 
     today = datetime.date.today()
@@ -352,7 +352,7 @@ def plot2(t, totalData, metrics, prediction_date, days_to_predict, predictions_n
 # Main
 def main():
     if len(sys.argv) != 2 and len(sys.argv) != 3:
-        print("Usage: python3 rnn2.py <ticker> <optional model file>")
+        print("Usage: python3 rnn2.py <ticker> <optional model files>")
         exit(-1)
     elif len(sys.argv) == 3:
         saved = sys.argv[2]
