@@ -179,7 +179,7 @@ def latestComment(reddit, urlT):
 def getSentiment(ticker, csv):
 
     if csv:
-        dfSentimentStocks = pd.read_csv('artifacts/sentiment.csv', index=False)
+        dfSentimentStocks = pd.read_csv('artifacts/sentiment.csv')
     else:
 
         nltk.download('vader_lexicon')
@@ -332,12 +332,12 @@ def predictPrice(t, epochs, batch_size, sentiment, model_n, model_one):
     metrics = model_n.evaluate(x_test, y_test)
     predictions_one = scaler.inverse_transform(predictions_one)
 
+    print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
     print("Plotting...")
-    plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one)
+    plot(t, totalData, prediction_date, days_to_predict, predictions_n, predictions_one)
 
 # Plots control and actual predictions according to real data
-def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n, predictions_one):
-
+def plot(t, totalData, prediction_date, days_to_predict, predictions_n, predictions_one):
     today = datetime.date.today()
     totalDates = pd.date_range(start="2020-01-01", end=today.strftime('%Y-%m-%d'), freq='B')
     predictionDates = pd.date_range(start=prediction_date.strftime('%Y-%m-%d'),
@@ -363,16 +363,15 @@ def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n,
     ax.set_xlabel("Date", fontsize=18, color='gray')
     plt.title(t + " Stock Price Prediction", fontsize=25, color='gray')
     plt.savefig('artifacts/graph.png')
-    print(f"Mean Absolute % Error: {metrics[1]: .2f}%")
 
 
 # Main
 def main():
     parser = argparse.ArgumentParser(description='Generate price prediction graph for selected company.')
     parser.add_argument('ticker', help='company stock symbol')
-    parser.add_argument('--modelN', dest='model_n', nargs=1, help='optional path to trained model_n')
-    parser.add_argument('--model1', dest='model_one', nargs=1, help='optional path to trained model_one')
-    parser.add_argument('--csv', dest='csv', nargs=1, help='optional path to sentiment data')
+    parser.add_argument('--modelN', dest='model_n', nargs='?', help='optional path to trained model_n')
+    parser.add_argument('--model1', dest='model_one', nargs='?', help='optional path to trained model_one')
+    parser.add_argument('--csv', dest='csv', nargs='?', help='optional path to sentiment data')
     args = parser.parse_args()
 
     epochs = EPOCHS
