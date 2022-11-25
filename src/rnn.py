@@ -370,8 +370,9 @@ def plot(t, totalData, metrics, prediction_date, days_to_predict, predictions_n,
 def main():
     parser = argparse.ArgumentParser(description='Generate price prediction graph for selected company.')
     parser.add_argument('ticker', help='company stock symbol')
-    parser.add_argument('--modelN', dest='model_n', nargs='?', help='path to trained model_n')
-    parser.add_argument('--model1', dest='model_one', nargs='?', help='path to trained model_one')
+    parser.add_argument('--modelN', dest='model_n', nargs=1, help='optional path to trained model_n')
+    parser.add_argument('--model1', dest='model_one', nargs=1, help='optional path to trained model_one')
+    parser.add_argument('--csv', dest='csv', nargs=1, help='optional path to sentiment data')
     args = parser.parse_args()
 
     epochs = EPOCHS
@@ -386,7 +387,7 @@ def main():
         print("Invalid ticker: " + args.ticker)
         exit(-1)
 
-    sentiment = getSentiment(args.ticker, args.sentiment)
+    sentiment = getSentiment(args.ticker, args.csv)
     predictPrice(args.ticker,
                 epochs,
                 batch_size,

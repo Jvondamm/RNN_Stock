@@ -1,25 +1,18 @@
-# Foobar
+# RNN.PY
+
+## Introduction
 
 RNN is a python script that generates a 20-day prediction price graph for a user-specified stock utilizing a sentiment analysis of Reddit Posts and a LSTM model trained on stock price history.
 
-What every "Predicting Stock Prices Using Python" article (and I mean literally every) doesn't tell you is that they only predict one day in advance, but display a graph predicting weeks into the future.
-
-How?
-
-First note that every model including mine, to measure their performance, pretends "today" is around a month ago, so it can show whether its predicted prices are accurate or not.
-
-Then the models use the format of taking in the previous 50 days of prices and outputting today's price. Then to predict the tomorrow, it *should* take in the previous 49 days, append its own predicted for today, to make a length-50 array, then predict tomorrow's price. Instead every article disregards the price it predicted for today, and takes in the *real* price of today, and uses that to predict tomorrow. Keep on repeating this and you are really only predicting one day in advance.
-
-This is done by training the model to take in for example 50 days, then predict the 51st day. Then to predict that 52nd day, the model doesn't use the day it just, but the actual price of the 51st day.
-
-
 Model-One predicts prices one day in future and acts as a accuracy ideal.
+
 Model-N predicts prices N days, in this case 20 days in the future, and is the real price predictor model whose accuracy matters.
 
-
+Both are plotted on the output graph in `artifacts/graph.png`
 
 ## Installation
 
+Clone the repo, then install the necessary packages:
 ```python
 pip3 install -r requirements.txt
 ```
@@ -27,29 +20,59 @@ pip3 install -r requirements.txt
 
 ## Usage
 
-First, import your Reddit API id, secret, and user agent into config.py.
-
-
-Output model, csv, and graph files are in artifacts. Sample files for AMZN included.
+First, import your Reddit API id, secret, and user agent into config.py:
 
 ```python
+client_id='your_client_id'
+client_secret='your_client_secret'
+user_agent='reddit_username'
+```
 
+The only required command line argument is a ticker of a company. Works best for a company with >20 years of stock price history.
+Outputs a graph file; "graph.png", and saves model_one and model_n dirs, all under artifacts/ dir. Can optionally save the sentiment data from web scraping as a CSV.
+
+Will always overwrite the graph.
+
+Will overwrite model files if no existing model dirs are given as input.
+
+If cmd line arg to save sentiment data is given, will overwrite any existing file.
+
+```python
 # Help
 python3 src/rnn.py -h
 
 # Output
-usage: rnn.py [-h] [--modelN [MODEL_N]] [--model1 [MODEL_ONE]] ticker
+usage: rnn.py [-h] [--modelN MODEL_N] [--model1 MODEL_ONE] [--csv CSV] ticker
 
 Generate price prediction graph for selected company.
 
 positional arguments:
-  ticker                company stock symbol
+  ticker              company stock symbol
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --modelN [MODEL_N]    path to trained model_n
-  --model1 [MODEL_ONE]  path to trained model_one
+  -h, --help          show this help message and exit
+  --modelN MODEL_N    optional path to trained model_n
+  --model1 MODEL_ONE  optional path to trained model_one
+  --csv CSV           optional path to sentiment data
+
+
+# Example command line argument configurations
+python3 src/rnn.py AMZN # will output graph of AMZN price prediction and two model dirs
+python3 src/rnn.py --modelN artifacts/model_n --model1 artifacts/model_one AMZN # same output, uses previously generated model dirs
+python3 src/rnn.py --csv artifacts/sentiment.csv AMZN # also same output, uses previously generated sentiment csv data
 ```
+
+## Background
+
+What every "Predicting Stock Prices Using Python" article (and I mean literally every) doesn't tell you is that they only predict one day in advance, but display a graph predicting weeks into the future.
+
+*How?*
+
+First note that every model including mine, to measure their performance, pretends "today" is around a month ago, so it can show whether its predicted prices are accurate or not.
+
+Then the models use the format of taking in the previous 50 days of prices and outputting today's price. Then to predict the tomorrow price, it *should* take in the previous 49 days, append its own predicted for today to make the same length-50 array, then predict tomorrow's price. Instead every article disregards the price it predicted for today, and takes in the *real* price of today, and uses that to predict tomorrow. Keep on repeating this and you are really only predicting one day in advance as you self-correct with the real price each time.
+
+Now what that model is useful for is to measure accuracy, and is an ideal that a real predictive model can measure as an ideal metric. This model is used as a metric and called "model_one" in the src code. The real predictive model is called "model_n". This does what the model *should* do as explained above. It takes 50 real prices, predict the 51st, adds that to the array of 50, then drops the last price, and repeat until there are, say, 20 predicted days.
 
 ## Contributing
 
